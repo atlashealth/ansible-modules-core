@@ -439,7 +439,7 @@ def main():
             attach_volume(module, ec2, volume, inst)
         module.exit_json(volume_id=volume.id, device=device_name)
         
-    if state == 'detach':
+    if state == 'detached':
         detach_volume(module, ec2)
 
 # import module snippets
