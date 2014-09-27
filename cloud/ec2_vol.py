@@ -94,10 +94,10 @@ options:
     version_added: "1.5"
   state:
     description: 
-      - whether to ensure the volume is present or absent, or to list existing volumes (The C(list) option was added in version 1.8).
+      - whether to ensure the volume is present, absent, detached or to list existing volumes (The C(list) and C(detach) options were added in version 1.8).
     required: false
     default: present
-    choices: ['absent', 'present', 'list']
+    choices: ['absent', 'present', 'detached', 'list']
     version_added: "1.6"
 author: Lester Wade
 extends_documentation_fragment: aws
@@ -168,6 +168,12 @@ EXAMPLES = '''
     id: vol-XXXXXXXX
     state: absent
 
+# Detach a volume
+- local_action:
+    module: ec2_vol
+    id: vol-XXXXXXXX
+    state: detached
+    
 # List volumes for an instance
 - local_action:
     module: ec2_vol
@@ -330,6 +336,13 @@ def attach_volume(module, ec2, volume, instance):
         except boto.exception.BotoServerError, e:
             module.fail_json(msg = "%s: %s" % (e.error_code, e.error_message))
 
+def detach_volume(module, ec2):
+    vol = get_volume(module, ec2)
+    if not vol or vol.attachment_state() is None:
+        module.exit_json(changed=False)
+    else:
+        vol.detach()
+        module.exit_json(changed=True)
 
 def main():
     argument_spec = ec2_argument_spec()
@@ -343,7 +356,7 @@ def main():
             device_name = dict(),
             zone = dict(aliases=['availability_zone', 'aws_zone', 'ec2_zone']),
             snapshot = dict(),
-            state = dict(choices=['absent', 'present', 'list'], default='present')
+            state = dict(choices=['absent', 'present', 'list', 'detached'], default='present')
         )
     )
     module = AnsibleModule(argument_spec=argument_spec)
@@ -417,7 +430,6 @@ def main():
     if volume_size and (id or name):
         module.fail_json(msg="Cannot specify volume_size and either one of name or id")
 
-
     if state == 'absent':
         delete_volume(module, ec2)
 
@@ -426,6 +438,9 @@ def main():
         if instance:
             attach_volume(module, ec2, volume, inst)
         module.exit_json(volume_id=volume.id, device=device_name)
+        
+    if state == 'detach':
+        detach_volume(module, ec2)
 
 # import module snippets
 from ansible.module_utils.basic import *
