@@ -496,7 +496,9 @@ def create_vpc(module, vpc_conn):
     vpc_dict = get_vpc_info(vpc)
     created_vpc_id = vpc.id
     returned_subnets = []
+    returned_route_tables = []
     current_subnets = vpc_conn.get_all_subnets(filters={ 'vpc_id': vpc.id })
+    current_route_tables = vpc_conn.get_all_route_tables(filters={ 'vpc_id': vpc.id })
 
     for sn in current_subnets:
         returned_subnets.append({
@@ -515,7 +517,14 @@ def create_vpc(module, vpc_conn):
     subnets_in_play = len(subnets)
     returned_subnets.sort(key=lambda x: order.get(x['cidr'], subnets_in_play))
 
-    return (vpc_dict, created_vpc_id, returned_subnets, changed)
+    for rt in current_route_tables:
+        returned_route_tables.append({
+            'id': rt.id,
+            'routes': [route.destination_cidr_block for route in rt.routes],
+            'associations': [association.id for association in rt.associations]
+        })
+
+    return (vpc_dict, created_vpc_id, returned_subnets, returned_route_tables, changed)
 
 def terminate_vpc(module, vpc_conn, vpc_id=None, cidr=None):
     """
@@ -621,9 +630,9 @@ def main():
         subnets_changed = None
     elif module.params.get('state') == 'present':
         # Changed is always set to true when provisioning a new VPC
-        (vpc_dict, new_vpc_id, subnets_changed, changed) = create_vpc(module, vpc_conn)
+        (vpc_dict, new_vpc_id, subnets_changed, route_tables_changed, changed) = create_vpc(module, vpc_conn)
 
-    module.exit_json(changed=changed, vpc_id=new_vpc_id, vpc=vpc_dict, subnets=subnets_changed)
+    module.exit_json(changed=changed, vpc_id=new_vpc_id, vpc=vpc_dict, subnets=subnets_changed, route_tables=route_tables_changed)
 
 # import module snippets
 from ansible.module_utils.basic import *
