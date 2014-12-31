@@ -62,6 +62,7 @@ options:
     default: null
     aliases: []
   tenancy:
+    version_added: "1.8"
     description:
       - An instance with a tenancy of "dedicated" runs on single-tenant hardware and can only be launched into a VPC. Valid values are:"default" or "dedicated". NOTE: To use dedicated tenancy you MUST specify a vpc_subnet_id as well. Dedicated tenancy is not available for EC2 "micro" instances. 
     required: false
@@ -304,6 +305,18 @@ EXAMPLES = '''
     monitoring: yes
     vpc_subnet_id: subnet-29e63245
     assign_public_ip: yes
+
+# Dedicated tenancy example
+- local_action:
+    module: ec2
+    assign_public_ip: yes
+    group_id: sg-1dc53f72
+    key_name: mykey
+    image: ami-6e649707
+    instance_type: m1.small
+    tenancy: dedicated
+    vpc_subnet_id: subnet-29e63245
+    wait: yes
 
 # Dedicated tenancy example
 - local_action:
@@ -599,6 +612,11 @@ def get_instance_info(inst):
         instance_info['ebs_optimized'] = getattr(inst, 'ebs_optimized')
     except AttributeError:
         instance_info['ebs_optimized'] = False
+
+    try:
+        instance_info['tenancy'] = getattr(inst, 'placement_tenancy')
+    except AttributeError:
+        instance_info['tenancy'] = 'default'
 
     return instance_info
 
