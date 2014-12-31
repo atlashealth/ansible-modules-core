@@ -169,10 +169,9 @@ EXAMPLES = '''
     state: absent
 
 # Detach a volume
-- local_action:
-    module: ec2_vol
+- ec2_vol:
     id: vol-XXXXXXXX
-    state: detached
+    instance: None
 
 # List volumes for an instance
 - ec2_vol:
@@ -180,8 +179,7 @@ EXAMPLES = '''
     state: list
 
 # Create new volume using SSD storage
-- local_action:
-    module: ec2_vol
+- ec2_vol:
     instance: XXXXXX
     volume_size: 50
     volume_type: gp2
@@ -267,15 +265,18 @@ def create_volume(module, ec2, zone):
     if iops:
         volume_type = 'io1'
 
+    if instance == 'None' or instance == '':
+        instance = None
+
     # If no instance supplied, try volume creation based on module parameters.
     if name or id:
-        if not instance:
-            module.fail_json(msg = "If name or id is specified, instance must also be specified")
         if iops or volume_size:
             module.fail_json(msg = "Parameters are not compatible: [id or name] and [iops or volume_size]")
 
         volume = get_volume(module, ec2)
         if volume.attachment_state() is not None:
+            if instance is None:
+                return volume
             adata = volume.attach_data
             if adata.instance_id != instance:
                 module.fail_json(msg = "Volume %s is already attached to another instance: %s"
@@ -375,6 +376,9 @@ def main():
     snapshot = module.params.get('snapshot')
     state = module.params.get('state')
 
+    if instance == 'None' or instance == '':
+        instance = None
+
     ec2 = ec2_connect(module)
 
     if state == 'list':
@@ -440,10 +444,9 @@ def main():
         volume = create_volume(module, ec2, zone)
         if instance:
             attach_volume(module, ec2, volume, inst)
+        else:
+            detach_volume(module, ec2)    
         module.exit_json(volume_id=volume.id, device=device_name, volume_type=volume.type)
-
-    if state == 'detached':
-        detach_volume(module, ec2)
 
 # import module snippets
 from ansible.module_utils.basic import *
