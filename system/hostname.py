@@ -45,18 +45,6 @@ from distutils.version import LooseVersion
 from ansible.module_utils.basic import *
 
 
-# wrap get_distribution_version in case it returns a string
-def _get_distribution_version():
-    distribution_version = get_distribution_version()
-
-    if type(distribution_version) is str:
-        distribution_version = 0
-    elif type(distribution_version) is None:
-        distribution_version = 0
-
-    return distribution_version
-
-
 class UnimplementedStrategy(object):
     def __init__(self, module):
         self.module = module
@@ -298,31 +286,37 @@ class OpenRCStrategy(GenericStrategy):
 
     def get_permanent_hostname(self):
         try:
-            with open(self.HOSTNAME_FILE, 'r') as f:
+            try:
+                f = open(self.HOSTNAME_FILE, 'r')
                 for line in f:
                     line = line.strip()
                     if line.startswith('hostname='):
                         return line[10:].strip('"')
-            return None
-        except Exception, err:
-            self.module.fail_json(msg="failed to read hostname: %s" %
-                str(err))
+            except Exception, err:
+                self.module.fail_json(msg="failed to read hostname: %s" % str(err))
+        finally:
+            f.close()
+
+        return None
 
     def set_permanent_hostname(self, name):
         try:
-            with open(self.HOSTNAME_FILE, 'r') as f:
+            try:
+                f = open(self.HOSTNAME_FILE, 'r')
                 lines = [x.strip() for x in f]
 
-            for i, line in enumerate(lines):
-                if line.startswith('hostname='):
-                    lines[i] = 'hostname="%s"' % name
-                    break
+                for i, line in enumerate(lines):
+                    if line.startswith('hostname='):
+                        lines[i] = 'hostname="%s"' % name
+                        break
+                f.close()
 
-            with open(self.HOSTNAME_FILE, 'w') as f:
+                f = open(self.HOSTNAME_FILE, 'w')
                 f.write('\n'.join(lines) + '\n')
-        except Exception, err:
-            self.module.fail_json(msg="failed to update hostname: %s" %
-                str(err))
+            except Exception, err:
+                self.module.fail_json(msg="failed to update hostname: %s" % str(err))
+        finally:
+            f.close()
 
 # ===========================================
 
@@ -349,7 +343,7 @@ class RedHat5Hostname(Hostname):
 class RedHatServerHostname(Hostname):
     platform = 'Linux'
     distribution = 'Red hat enterprise linux server'
-    distribution_version = _get_distribution_version()
+    distribution_version = get_distribution_version()
     if distribution_version and LooseVersion(distribution_version) >= LooseVersion("7"):
         strategy_class = FedoraStrategy
     else:
@@ -358,7 +352,7 @@ class RedHatServerHostname(Hostname):
 class RedHatWorkstationHostname(Hostname):
     platform = 'Linux'
     distribution = 'Red hat enterprise linux workstation'
-    distribution_version = _get_distribution_version()
+    distribution_version = get_distribution_version()
     if distribution_version and LooseVersion(distribution_version) >= LooseVersion("7"):
         strategy_class = FedoraStrategy
     else:
@@ -367,7 +361,7 @@ class RedHatWorkstationHostname(Hostname):
 class CentOSHostname(Hostname):
     platform = 'Linux'
     distribution = 'Centos'
-    distribution_version = _get_distribution_version()
+    distribution_version = get_distribution_version()
     if distribution_version and LooseVersion(distribution_version) >= LooseVersion("7"):
         strategy_class = FedoraStrategy
     else:
@@ -376,7 +370,7 @@ class CentOSHostname(Hostname):
 class CentOSLinuxHostname(Hostname):
     platform = 'Linux'
     distribution = 'Centos linux'
-    distribution_version = _get_distribution_version()
+    distribution_version = get_distribution_version()
     if distribution_version and LooseVersion(distribution_version) >= LooseVersion("7"):
         strategy_class = FedoraStrategy
     else:

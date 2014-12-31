@@ -262,12 +262,12 @@ class User(object):
         # select whether we dump additional debug info through syslog
         self.syslogging = False
 
-    def execute_command(self, cmd):
+    def execute_command(self, cmd, use_unsafe_shell=False):
         if self.syslogging:
             syslog.openlog('ansible-%s' % os.path.basename(__file__))
             syslog.syslog(syslog.LOG_NOTICE, 'Command %s' % '|'.join(cmd))
 
-        return self.module.run_command(cmd)
+        return self.module.run_command(cmd, use_unsafe_shell=use_unsafe_shell)
 
     def remove_user_userdel(self):
         cmd = [self.module.get_bin_path('userdel', True)]
@@ -299,7 +299,15 @@ class User(object):
             # exists with the same name as the user to prevent 
             # errors from useradd trying to create a group when 
             # USERGROUPS_ENAB is set in /etc/login.defs.
-            cmd.append('-N')
+            if os.path.exists('/etc/redhat-release'):
+                dist = platform.dist()
+                major_release = int(dist[1].split('.')[0])
+                if major_release <= 5:
+                    cmd.append('-n')
+                else:
+                    cmd.append('-N')
+            else:
+                cmd.append('-N')
 
         if self.groups is not None and len(self.groups):
             groups = self.get_groups_set()
@@ -439,21 +447,23 @@ class User(object):
 
     def group_exists(self,group):
         try:
-            if group.isdigit():
-                if grp.getgrgid(int(group)):
-                    return True
-            else:
-                if grp.getgrnam(group):
-                    return True
-        except KeyError:
-            return False
+            # Try group as a gid first
+            grp.getgrgid(int(group))
+            return True
+        except (ValueError, KeyError):
+            try:
+                grp.getgrnam(group)
+                return True
+            except KeyError:
+                return False
 
-    def group_info(self,group):
+    def group_info(self, group):
         if not self.group_exists(group):
             return False
-        if group.isdigit():
-            return list(grp.getgrgid(group))
-        else:
+        try:
+            # Try group as a gid first
+            return list(grp.getgrgid(int(group)))
+        except (ValueError, KeyError):
             return list(grp.getgrnam(group))
 
     def get_groups_set(self, remove_existing=True):
@@ -1245,7 +1255,7 @@ class SunOS(User):
                 cmd.append('-G')
                 new_groups = groups
                 if self.append:
-                    new_groups.extend(current_groups)
+                    new_groups.update(current_groups)
                 cmd.append(','.join(new_groups))
 
         if self.comment is not None and info[4] != self.comment:
@@ -1357,11 +1367,11 @@ class AIX(User):
         # set password with chpasswd
         if self.password is not None:
             cmd = []
-            cmd.append('echo "'+self.name+':'+self.password+'" |')
+            cmd.append('echo \''+self.name+':'+self.password+'\' |')
             cmd.append(self.module.get_bin_path('chpasswd', True))
             cmd.append('-e')
             cmd.append('-c')
-            self.execute_command(' '.join(cmd))
+            self.execute_command(' '.join(cmd), use_unsafe_shell=True)
 
         return (rc, out, err)
 
@@ -1433,11 +1443,11 @@ class AIX(User):
         # set password with chpasswd
         if self.update_password == 'always' and self.password is not None and info[1] != self.password:
             cmd = []
-            cmd.append('echo "'+self.name+':'+self.password+'" |')
+            cmd.append('echo \''+self.name+':'+self.password+'\' |')
             cmd.append(self.module.get_bin_path('chpasswd', True))
             cmd.append('-e')
             cmd.append('-c')
-            (rc2, out2, err2) = self.execute_command(' '.join(cmd))
+            (rc2, out2, err2) = self.execute_command(' '.join(cmd), use_unsafe_shell=True)
         else:
             (rc2, out2, err2) = (None, '', '')
 
