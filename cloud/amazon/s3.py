@@ -83,6 +83,12 @@ options:
     required: false
     default: null
     version_added: "1.8"
+  provider_options:
+    description:
+      - Additional options for PUT operation, which might not be supported by every S3-compatible provider, e.g. encrypt_key.
+    required: false
+    default: null
+    version_added: "1.8"
 author: Lester Wade, Ralph Tice
 extends_documentation_fragment: aws
 '''
@@ -108,6 +114,15 @@ EXAMPLES = '''
 
 # GET an object but dont download if the file checksums  match 
 - s3: bucket=mybucket object=/my/desired/key.txt dest=/usr/local/myfile.txt mode=get overwrite=different
+
+# PUT/upload and pass a custom option to the storage provider
+  s3:
+    bucket: mybucket
+    mode: put
+    object: /my/desired/key.txt
+    src: /usr/local/myfile.txt
+    provider_options:
+      encrypt_key: true
 '''
 
 import os
@@ -207,7 +222,7 @@ def path_check(path):
     else:
         return False
 
-def upload_s3file(module, s3, bucket, obj, src, expiry, metadata):
+def upload_s3file(module, s3, bucket, obj, src, expiry, metadata, provider_options):
     try:
         bucket = s3.lookup(bucket)
         key = bucket.new_key(obj)
@@ -215,7 +230,7 @@ def upload_s3file(module, s3, bucket, obj, src, expiry, metadata):
             for meta_key in metadata.keys():
                 key.set_metadata(meta_key, metadata[meta_key])
 
-        key.set_contents_from_filename(src)
+        key.set_contents_from_filename(src, **provider_options)
         url = key.generate_url(expiry)
         module.exit_json(msg="PUT operation complete", url=url, changed=True)
     except s3.provider.storage_copy_error, e:
@@ -268,15 +283,16 @@ def is_walrus(s3_url):
 def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
-            bucket         = dict(required=True),
-            object         = dict(),
-            src            = dict(),
-            dest           = dict(default=None),
-            mode           = dict(choices=['get', 'put', 'delete', 'create', 'geturl', 'getstr'], required=True),
-            expiry         = dict(default=600, aliases=['expiration']),
-            s3_url         = dict(aliases=['S3_URL']),
-            overwrite      = dict(aliases=['force'], default='always'),
-            metadata       = dict(type='dict'),
+            bucket            = dict(required=True),
+            object            = dict(),
+            src               = dict(),
+            dest              = dict(default=None),
+            mode              = dict(choices=['get', 'put', 'delete', 'create', 'geturl', 'getstr'], required=True),
+            expiry            = dict(default=600, aliases=['expiration']),
+            s3_url            = dict(aliases=['S3_URL']),
+            overwrite         = dict(aliases=['force'], default='always'),
+            metadata          = dict(type='dict'),
+            provider_options  = dict(default=dict(), required=False),
         ),
     )
     module = AnsibleModule(argument_spec=argument_spec)
@@ -294,6 +310,7 @@ def main():
     s3_url = module.params.get('s3_url')
     overwrite = module.params.get('overwrite')
     metadata = module.params.get('metadata')
+    provider_options = module.params.get('provider_options')
 
     if overwrite not in  ['always', 'never', 'different']: 
         if module.boolean(overwrite): 
@@ -390,8 +407,6 @@ def main():
         if sum_matches is True and pathrtn is True and overwrite == 'always':
             download_s3file(module, s3, bucket, obj, dest)
 
-        # If sum does not match but the destination exists, we
-
     # if our mode is a PUT operation (upload), go through the procedure as appropriate ...
     if mode == 'put':
 
@@ -416,24 +431,24 @@ def main():
                 if md5_local == md5_remote:
                     sum_matches = True
                     if overwrite == 'always':
-                        upload_s3file(module, s3, bucket, obj, src, expiry, metadata)
+                        upload_s3file(module, s3, bucket, obj, src, expiry, metadata, provider_options)
                     else:
                         get_download_url(module, s3, bucket, obj, expiry, changed=False)
                 else:
                     sum_matches = False
                     if overwrite in ('always', 'different'):
-                        upload_s3file(module, s3, bucket, obj, src, expiry, metadata)
+                        upload_s3file(module, s3, bucket, obj, src, expiry, metadata, provider_options)
                     else:
                         module.exit_json(msg="WARNING: Checksums do not match. Use overwrite parameter to force upload.")
 
         # If neither exist (based on bucket existence), we can create both.
         if bucketrtn is False and pathrtn is True:
             create_bucket(module, s3, bucket, location)
-            upload_s3file(module, s3, bucket, obj, src, expiry, metadata)
+            upload_s3file(module, s3, bucket, obj, src, expiry, metadata, provider_options)
 
         # If bucket exists but key doesn't, just upload.
         if bucketrtn is True and pathrtn is True and keyrtn is False:
-            upload_s3file(module, s3, bucket, obj, src, expiry, metadata)
+            upload_s3file(module, s3, bucket, obj, src, expiry, metadata, provider_options)
 
     # Support for deleting an object if we have both params.
     if mode == 'delete':
